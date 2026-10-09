@@ -1,0 +1,138 @@
+<!-- USE OF AI IN THIS CODE -->
+<!-- After I got the original html file from TM website, I gave it to chatgpt-->
+<!-- I gave it this text: -->
+<!-- I will make a model that detects true or false and then in the html-file I want to add some questions that only have true or false answers.
+ Then it reacts when the user uses the mic. How is that done?-->
+<!-- After testing the given code I was not happy with the results. The Background noise was picked up as an aswer, so I gave this: -->
+<!-- Add functionality to this script where if the audio is recognized to be only background noise then the script recognizes that the question hasn't been answerred.
+ And make it so that it lets you pass if I've said 80-100% certanty true or false.-->
+<!-- Then I received this script.-->
+
+<!-- I normally don't use generative Ai features while coding, but I thought to try it out in this task atleast
+ as I man not so proficient with html and javascript that I could have figured this out by myself in a reasonable time frame. -->
+<div>Teachable Machine Audio Model</div>
+<button type="button" onclick="init()">Start Quiz</button>
+<div id="question"></div>
+<div id="label-container"></div>
+<div id="result"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.4.0/dist/speech-commands.min.js"></script>
+
+<script>
+const URL = "/voicequiz/my_model/";
+const CONFIDENCE_THRESHOLD = 0.80;
+
+let recognizer;
+let classLabels;
+let current = 0;
+let waitingForAnswer = true;
+
+const questions = [
+    {q:"The sky is blue", a:"True"},
+    {q:"2 + 2 equals 5", a:"False"},
+    {q:"The Earth is flat", a:"False"}
+];
+
+document.getElementById("question").innerText = questions[current].q;
+
+async function createModel(){
+    const checkpointURL = URL + "model.json";
+    const metadataURL = URL + "metadata.json";
+
+    recognizer = speechCommands.create(
+        "BROWSER_FFT",
+        undefined,
+        checkpointURL,
+        metadataURL
+    );
+
+    await recognizer.ensureModelLoaded();
+    classLabels = recognizer.wordLabels();
+}
+
+async function init(){
+
+    await createModel();
+
+    const labelContainer = document.getElementById("label-container");
+
+    for(let i=0;i<classLabels.length;i++){
+        labelContainer.appendChild(document.createElement("div"));
+    }
+
+    recognizer.listen(result => {
+
+        const scores = result.scores;
+
+        for(let i=0;i<classLabels.length;i++){
+            labelContainer.childNodes[i].innerHTML =
+                classLabels[i] + ": " + scores[i].toFixed(2);
+        }
+
+        let highestScore = 0;
+        let prediction = "";
+
+        for(let i=0;i<scores.length;i++){
+            if(scores[i] > highestScore){
+                highestScore = scores[i];
+                prediction = classLabels[i];
+            }
+        }
+
+        if(!waitingForAnswer) return;
+
+        const lower = prediction.toLowerCase();
+
+        // ignore noise or unknown predictions
+        if(lower.includes("noise") || lower.includes("unknown")){
+            document.getElementById("result").innerText = "Waiting for answer...";
+            return;
+        }
+
+        // require >=80% certainty
+        if(highestScore < CONFIDENCE_THRESHOLD){
+            document.getElementById("result").innerText = "Confidence too low";
+            return;
+        }
+
+        if(prediction === "True" || prediction === "False"){
+            checkAnswer(prediction);
+        }
+
+    },{
+        includeSpectrogram:false,
+        probabilityThreshold:0.50,
+        invokeCallbackOnNoiseAndUnknown:true,
+        overlapFactor:0.5
+    });
+}
+
+function checkAnswer(prediction){
+
+    waitingForAnswer = false;
+
+    const correct = questions[current].a;
+
+    if(prediction.toLowerCase() === correct.toLowerCase()){
+        document.getElementById("result").innerText = "Correct";
+    } else {
+        document.getElementById("result").innerText = "Wrong";
+    }
+
+    current++;
+
+    setTimeout(()=>{
+
+        if(current < questions.length){
+            document.getElementById("question").innerText = questions[current].q;
+            document.getElementById("result").innerText = "";
+            waitingForAnswer = true;
+        }else{
+            document.getElementById("question").innerText = "Quiz finished";
+            recognizer.stopListening();
+        }
+
+    },1500);
+}
+</script>
